@@ -1,0 +1,266 @@
+﻿@page "/announcements"
+@using Microsoft.Extensions.Localization
+@using Models.Entities
+@using MyDbModels
+@using Providers
+@using SAT242516060.Resources
+@using Microsoft.AspNetCore.Authorization
+
+@* HERKES GİREBİLİR *@
+@attribute [Authorize]
+
+@inject IMyDbModel_Provider _provider
+@inject IStringLocalizer<SharedResource> Localizer
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<h3>📢 Duyurular</h3>
+
+<div class="card mt-3">
+    <div class="card-header">
+        <div class="row">
+            <div class="col-md-6">
+                <input type="text" class="form-control" placeholder="@Localizer["Search"]..." 
+                       @bind="SearchText" @bind:event="oninput" @onkeyup="SearchData" />
+            </div>
+            
+            @* YENİ EKLE BUTONU: SADECE ADMİNLER GÖRSÜN *@
+            <AuthorizeView Roles="Admin,Yonetici">
+                <Authorized>
+                    <div class="col-md-6 text-end">
+                        <button class="btn btn-primary" @onclick="OpenCreateForm">
+                            <i class="bi bi-plus-lg"></i> @Localizer["AddNew"]
+                        </button>
+                    </div>
+                </Authorized>
+            </AuthorizeView>
+            
+        </div>
+    </div>
+    <div class="card-body">
+        @if (myDbModel?.Items == null)
+        {
+            <p><em>@Localizer["Loading"]...</em></p>
+        }
+        else
+        {
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Başlık</th>
+                        <th>İçerik</th>
+                        <th>Tarih</th>
+                        
+                        @* İŞLEMLER BAŞLIĞI: SADECE ADMİNLER GÖRSÜN *@
+                        <AuthorizeView Roles="Admin,Yonetici">
+                            <Authorized>
+                                <th>@Localizer["Actions"]</th>
+                            </Authorized>
+                        </AuthorizeView>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in myDbModel.Items)
+                    {
+                        <tr>
+                            <td>@item.RowNum</td>
+                            <td>@item.Title</td>
+                            <td>
+                                @if (item.Content.Length > 50)
+                                {
+                                    @item.Content.Substring(0, 50) <span>...</span>
+                                }
+                                else
+                                {
+                                    @item.Content
+                                }
+                            </td>
+                            <td>@item.CreatedDate.ToShortDateString()</td>
+
+                            @* GÜNCELLE/SİL BUTONLARI: SADECE ADMİNLER GÖRSÜN *@
+                            <AuthorizeView Roles="Admin,Yonetici">
+                                <Authorized>
+                                    <td>
+                                        <button class="btn btn-sm btn-warning" @onclick="() => OpenEditForm(item)">
+                                            @Localizer["Update"]
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteItem(item.Id)">
+                                            @Localizer["Delete"]
+                                        </button>
+                                    </td>
+                                </Authorized>
+                            </AuthorizeView>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            
+             @* Sayfalama *@
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <span>Total: @myDbModel.Parameters.TotalRecordCount</span>
+                <div>
+                    <button class="btn btn-secondary btn-sm" @onclick="PrevPage" disabled="@(myDbModel.Parameters.PageNumber <= 1)">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    
+                    <span class="mx-2"> @myDbModel.Parameters.PageNumber / @myDbModel.Parameters.TotalPageCount </span>
+                    
+                    <button class="btn btn-secondary btn-sm" @onclick="NextPage" disabled="@(myDbModel.Parameters.PageNumber >= myDbModel.Parameters.TotalPageCount)">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@* FORM: SADECE ADMİNLER GÖRSÜN (Güvenlik İçin) *@
+<AuthorizeView Roles="Admin,Yonetici">
+    <Authorized>
+        @if (ShowForm)
+        {
+            <div class="modal d-block" style="background-color: rgba(0,0,0,0.5);">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">@(CurrentItem.Id == 0 ? Localizer["AddNew"] : Localizer["Update"])</h5>
+                            <button type="button" class="btn-close" @onclick="CloseForm"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label>Başlık</label>
+                                <input class="form-control" @bind="CurrentItem.Title" />
+                            </div>
+                            <div class="mb-3">
+                                <label>İçerik</label>
+                                <textarea class="form-control" rows="4" @bind="CurrentItem.Content"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" @onclick="CloseForm">@Localizer["Cancel"]</button>
+                            <button class="btn btn-success" @onclick="SaveItem">@Localizer["Save"]</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private IMyDbModel<Announcement> myDbModel = new MyDbModel<Announcement>();
+    private Announcement CurrentItem = new();
+    private bool ShowForm = false;
+    private string SearchText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        myDbModel.Parameters.OrderBy = "CreatedDate DESC";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        if (!string.IsNullOrEmpty(SearchText))
+        {
+            if (myDbModel.Parameters.Where.ContainsKey("SearchText"))
+                myDbModel.Parameters.Where["SearchText"] = SearchText;
+            else
+                myDbModel.Parameters.Where.Add("SearchText", SearchText);
+        }
+        else
+        {
+             if (myDbModel.Parameters.Where.ContainsKey("SearchText"))
+                myDbModel.Parameters.Where.Remove("SearchText");
+        }
+
+        myDbModel = await _provider.Execute<Announcement>(myDbModel, "SP_GetAnnouncements", true);
+    }
+
+    private void OpenCreateForm()
+    {
+        CurrentItem = new Announcement();
+        ShowForm = true;
+    }
+
+    private void OpenEditForm(Announcement item)
+    {
+        CurrentItem = new Announcement
+        {
+            Id = item.Id,
+            Title = item.Title,
+            Content = item.Content,
+            CreatedDate = item.CreatedDate
+        };
+        ShowForm = true;
+    }
+
+    private void CloseForm() => ShowForm = false;
+
+    private async Task SaveItem()
+    {
+        if (CurrentItem.Id == 0)
+        {
+            await _provider.Execute<Announcement>("SP_Announcement_Insert",
+                ("Title", CurrentItem.Title),
+                ("Content", CurrentItem.Content ?? "")
+            );
+        }
+        else
+        {
+            await _provider.Execute<Announcement>("SP_Announcement_Update",
+                ("Id", CurrentItem.Id),
+                ("Title", CurrentItem.Title),
+                ("Content", CurrentItem.Content ?? "")
+            );
+        }
+
+        ShowForm = false;
+        
+        myDbModel = new MyDbModel<Announcement>();
+        myDbModel.Parameters.OrderBy = "CreatedDate DESC";
+        
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task DeleteItem(int id)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", Localizer["AreYouSure"].Value);
+        if (confirmed)
+        {
+            await _provider.Execute<Announcement>("SP_Announcement_Delete", ("Id", id));
+            
+            myDbModel = new MyDbModel<Announcement>();
+            myDbModel.Parameters.OrderBy = "CreatedDate DESC";
+            
+            await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    private async Task SearchData()
+    {
+        myDbModel.Parameters.PageNumber = 1;
+        await LoadData();
+    }
+
+    private async Task NextPage()
+    {
+        if (myDbModel.Parameters.PageNumber < myDbModel.Parameters.TotalPageCount)
+        {
+            myDbModel.Parameters.PageNumber++;
+            await LoadData();
+        }
+    }
+
+    private async Task PrevPage()
+    {
+        if (myDbModel.Parameters.PageNumber > 1)
+        {
+            myDbModel.Parameters.PageNumber--;
+            await LoadData();
+        }
+    }
+}

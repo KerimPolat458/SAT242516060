@@ -1,0 +1,287 @@
+﻿@page "/teachers"
+@using Microsoft.Extensions.Localization
+@using Models.Entities
+@using MyDbModels
+@using Providers
+@using SAT242516060.Resources
+@using Microsoft.AspNetCore.Authorization
+@inject SAT242516060.Services.PdfReportService _reportService
+
+@* Sadece yetkili kişiler girebilsin *@
+@attribute [Authorize(Roles = "Admin,Yonetici")] 
+
+@inject IMyDbModel_Provider _provider
+@inject IStringLocalizer<SharedResource> Localizer
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<h3>@Localizer["Teachers"] Yönetimi</h3>
+
+<div class="card">
+    <div class="card-header">
+        <div class="row">
+            <div class="col-md-6">
+                @* Arama Kutusu *@
+                <input type="text" class="form-control" placeholder="@Localizer["Search"]..." 
+                       @bind="SearchText" @bind:event="oninput" @onkeyup="SearchData" />
+            </div>
+            <div class="col-md-6 text-end">
+                @* Yeni Ekle Butonu *@
+                <button class="btn btn-primary" @onclick="OpenCreateForm">
+                    <i class="bi bi-plus-lg"></i> @Localizer["AddNew"]
+                </button>
+                @* Rapor Butonu *@
+                <button class="btn btn-secondary me-2" @onclick="DownloadReport">
+                    <i class="bi bi-file-earmark-pdf"></i> @Localizer["Report"]
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (myDbModel?.Items == null)
+        {
+            <p><em>@Localizer["Loading"]...</em></p>
+        }
+        else
+        {
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th style="cursor:pointer" @onclick='() => SortData("Id")'>#</th>
+                        <th style="cursor:pointer" @onclick='() => SortData("FirstName")'>@Localizer["FirstName"]</th>
+                        <th>@Localizer["LastName"]</th>
+                        <th>@Localizer["Email"]</th>
+                        <th>@Localizer["Title"]</th>
+                        <th>@Localizer["Actions"]</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in myDbModel.Items)
+                    {
+                        <tr>
+                            <td>@item.RowNum</td>
+                            <td>@item.FirstName</td>
+                            <td>@item.LastName</td>
+                            <td>@item.Email</td>
+                            <td>@item.Title</td>
+                            <td>
+                                <button class="btn btn-sm btn-warning" @onclick="() => OpenEditForm(item)">
+                                    @Localizer["Update"]
+                                </button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteItem(item.Id)">
+                                    @Localizer["Delete"]
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            @* Sayfalama *@
+            <div class="d-flex justify-content-between">
+                <span>Total: @myDbModel.Parameters.TotalRecordCount</span>
+                <div>
+                    <button class="btn btn-secondary btn-sm" @onclick="PrevPage" disabled="@(myDbModel.Parameters.PageNumber <= 1)">
+                        
+                    </button>
+                    <span> @myDbModel.Parameters.PageNumber / @myDbModel.Parameters.TotalPageCount </span>
+                    <button class="btn btn-secondary btn-sm" @onclick="NextPage" disabled="@(myDbModel.Parameters.PageNumber >= myDbModel.Parameters.TotalPageCount)">
+                        
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@* EKLEME / GÜNCELLEME FORMU *@
+@if (ShowForm)
+{
+    <div class="modal d-block" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(CurrentItem.Id == 0 ? Localizer["AddNew"] : Localizer["Update"])</h5>
+                    <button type="button" class="btn-close" @onclick="CloseForm"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label>@Localizer["FirstName"]</label>
+                        <input class="form-control" @bind="CurrentItem.FirstName" />
+                    </div>
+                    <div class="mb-3">
+                        <label>@Localizer["LastName"]</label>
+                        <input class="form-control" @bind="CurrentItem.LastName" />
+                    </div>
+                    <div class="mb-3">
+                        <label>@Localizer["Email"]</label>
+                        <input class="form-control" @bind="CurrentItem.Email" />
+                    </div>
+                    <div class="mb-3">
+                        <label>@Localizer["Title"]</label>
+                        <input class="form-control" @bind="CurrentItem.Title" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseForm">@Localizer["Cancel"]</button>
+                    <button class="btn btn-success" @onclick="SaveItem">@Localizer["Save"]</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IMyDbModel<Teacher> myDbModel = new MyDbModel<Teacher>();
+    private Teacher CurrentItem = new();
+    private bool ShowForm = false;
+    private string SearchText = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Varsayılan sıralama: En yeni en üstte
+        myDbModel.Parameters.OrderBy = "Id DESC";
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        if (!string.IsNullOrEmpty(SearchText))
+        {
+            if (myDbModel.Parameters.Where.ContainsKey("SearchText"))
+                myDbModel.Parameters.Where["SearchText"] = SearchText;
+            else
+                myDbModel.Parameters.Where.Add("SearchText", SearchText);
+        }
+        else
+        {
+            if (myDbModel.Parameters.Where.ContainsKey("SearchText"))
+                myDbModel.Parameters.Where.Remove("SearchText");
+        }
+
+        myDbModel = await _provider.Execute<Teacher>(myDbModel, "SP_GetTeachers", true);
+    }
+
+    private void OpenCreateForm()
+    {
+        CurrentItem = new Teacher();
+        ShowForm = true;
+    }
+
+    private void OpenEditForm(Teacher item)
+    {
+        CurrentItem = new Teacher
+        {
+            Id = item.Id,
+            FirstName = item.FirstName,
+            LastName = item.LastName,
+            Email = item.Email,
+            Title = item.Title
+        };
+        ShowForm = true;
+    }
+
+    private void CloseForm() => ShowForm = false;
+
+    private async Task SaveItem()
+    {
+        if (CurrentItem.Id == 0)
+        {
+            await _provider.Execute<Teacher>("SP_Teacher_Insert",
+                ("FirstName", CurrentItem.FirstName),
+                ("LastName", CurrentItem.LastName),
+                ("Email", CurrentItem.Email),
+                ("Title", CurrentItem.Title ?? "")
+            );
+        }
+        else
+        {
+            await _provider.Execute<Teacher>("SP_Teacher_Update",
+                ("Id", CurrentItem.Id),
+                ("FirstName", CurrentItem.FirstName),
+                ("LastName", CurrentItem.LastName),
+                ("Email", CurrentItem.Email),
+                ("Title", CurrentItem.Title ?? "")
+            );
+        }
+
+        ShowForm = false;
+
+        // --- KRİTİK DÜZELTME ---
+        // Modeli sıfırlıyoruz ki ekran baştan çizilsin (Refresh Fix)
+        myDbModel = new MyDbModel<Teacher>();
+        myDbModel.Parameters.OrderBy = "Id DESC";
+        // -----------------------
+
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task DeleteItem(int id)
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", Localizer["AreYouSure"].Value);
+        if (confirmed)
+        {
+            await _provider.Execute<Teacher>("SP_Teacher_Delete", ("Id", id));
+            
+            // --- KRİTİK DÜZELTME ---
+            // Modeli sıfırlıyoruz
+            myDbModel = new MyDbModel<Teacher>();
+            myDbModel.Parameters.OrderBy = "Id DESC";
+            // -----------------------
+
+            await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    private async Task SearchData()
+    {
+        myDbModel.Parameters.PageNumber = 1;
+        await LoadData();
+    }
+
+    private async Task SortData(string columnName)
+    {
+        if (myDbModel.Parameters.OrderBy == columnName + " ASC")
+            myDbModel.Parameters.OrderBy = columnName + " DESC";
+        else
+            myDbModel.Parameters.OrderBy = columnName + " ASC";
+
+        await LoadData();
+    }
+
+    private async Task NextPage()
+    {
+        if (myDbModel.Parameters.PageNumber < myDbModel.Parameters.TotalPageCount)
+        {
+            myDbModel.Parameters.PageNumber++;
+            await LoadData();
+        }
+    }
+
+    private async Task PrevPage()
+    {
+        if (myDbModel.Parameters.PageNumber > 1)
+        {
+            myDbModel.Parameters.PageNumber--;
+            await LoadData();
+        }
+    }
+
+    private async Task DownloadReport()
+    {
+        // 1. Veriyi çek
+        var allDataModel = await _provider.Execute<Teacher>(new MyDbModel<Teacher>(), "SP_GetTeachers", false);
+        var teachers = allDataModel.Items.ToList();
+
+        // 2. PDF oluştur
+        var pdfBytes = _reportService.GenerateTeacherReport(teachers);
+
+        // 3. İndir
+        using var stream = new MemoryStream(pdfBytes);
+        using var streamRef = new DotNetStreamReference(stream);
+
+        await JS.InvokeVoidAsync("downloadFileFromStream", $"Ogretmenler_{DateTime.Now:yyyyMMdd}.pdf", streamRef);
+    }
+}

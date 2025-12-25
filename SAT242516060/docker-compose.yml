@@ -1,0 +1,27 @@
+version: '3.4'
+
+services:
+  # Madde 4: MSSQL Kapsayıcısı
+  db_server:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: SAT242516060
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Sifreniz123! # Burayı SQL şifrenle değiştir
+    ports:
+      - "1445:1433"
+
+  # Madde 28: Blazor Uygulama Kapsayıcısı
+  web_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: SAT242516060_app
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      # Konteyner içinden DB'ye erişmek için 'localhost' yerine 'db_server' kullanılır
+      - ConnectionStrings__DefaultConnection=Server=db_server;Database=LibraryDb;User Id=sa;Password=Sifreniz123!;TrustServerCertificate=True;
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db_server

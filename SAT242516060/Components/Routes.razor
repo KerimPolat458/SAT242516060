@@ -1,0 +1,20 @@
+﻿@using SAT242516060.Components.Account
+@using SAT242516060.Components.Layout
+@* RedirectToLogin Layout klasöründeyse yukarıdaki using gereklidir *@
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                @* YETKİSİZ KULLANICIYI DİREKT LOGİN'E AT *@
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+    </Found>
+    <NotFound>
+        <PageTitle>Not found</PageTitle>
+        <LayoutView Layout="typeof(MainLayout)">
+            <p role="alert">Sorry, there's nothing at this address.</p>
+        </LayoutView>
+    </NotFound>
+</Router>

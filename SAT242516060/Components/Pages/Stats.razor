@@ -1,0 +1,90 @@
+﻿@page "/stats"
+@using Models.Entities
+@using MyDbModels
+@using Providers
+@using SAT242516060.Resources
+@using Microsoft.Extensions.Localization
+@using Microsoft.AspNetCore.Authorization
+@using ApexCharts
+
+@* Sadece yetkililer görsün *@
+@attribute [Authorize(Roles = "Admin,Yonetici")]
+
+@inject IMyDbModel_Provider _provider
+@inject IStringLocalizer<SharedResource> Localizer
+@rendermode InteractiveServer
+
+<h3>@Localizer["Statistics"]</h3>
+
+<div class="row mt-4">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                @Localizer["TeacherTitlesChart"]
+            </div>
+            <div class="card-body">
+                @if (ChartData == null)
+                {
+                    <p><em>@Localizer["Loading"]...</em></p>
+                }
+                else if (ChartData.Count == 0)
+                {
+                    <div class="alert alert-warning">
+                        Grafik çizmek için yeterli veri yok. Lütfen önce öğretmen ekleyin.
+                    </div>
+                }
+                else
+                {
+                    <ApexChart TItem="StatsItem"
+                               Title="@Localizer["TeacherTitlesChart"]"
+                               Options="options">
+
+                        <ApexPointSeries TItem="StatsItem"
+                                         Items="ChartData"
+                                         Name="Öğretmen Sayısı"
+                                         SeriesType="SeriesType.Bar"
+                                         XValue="@(e => e.Label)"
+                                         YValue="@(e => e.Value)"
+                                         Color="#0d6efd" />
+                    </ApexChart>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Yan tarafa özet bilgi kartı *@
+    <div class="col-md-4">
+        <div class="card bg-success text-white mb-3">
+            <div class="card-header">Toplam Öğretmen</div>
+            <div class="card-body">
+                <h1 class="display-4 text-center">@ChartData?.Sum(x => x.Value)</h1>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<StatsItem> ChartData;
+    private ApexChartOptions<StatsItem> options = new ApexChartOptions<StatsItem>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Grafik ayarları
+        // Execute metoduna önce boş bir model, sonra SP adı, sonra pagination=false gönderiyoruz.
+        var resultModel = await _provider.Execute<StatsItem>(new MyDbModel<StatsItem>(), "SP_GetTeacherStats", false);
+        options.PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = false } };
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        // Provider üzerinden SP_GetTeacherStats çağırıyoruz
+        // isPagination=false diyerek veriyi MyDbModel içine değil, direkt listeye çevirmesini umabiliriz
+        // ANCAK senin Provider yapın MyDbModel döndürüyor. Onu kullanalım.
+
+        // Execute metoduna önce boş bir model, sonra SP adı, sonra pagination=false gönderiyoruz.
+        var resultModel = await _provider.Execute<StatsItem>(new MyDbModel<StatsItem>(), "SP_GetTeacherStats", false);
+        ChartData = resultModel.Items.ToList();
+    }
+}
