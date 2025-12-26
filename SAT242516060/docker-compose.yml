@@ -9,7 +9,7 @@ services:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=Sifreniz123! # Burayı SQL şifrenle değiştir
     ports:
-      - "1445:1433"
+      - "1446:1433"
 
   # Madde 28: Blazor Uygulama Kapsayıcısı
   web_app:
